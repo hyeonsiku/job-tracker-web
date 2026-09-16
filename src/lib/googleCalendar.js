@@ -107,7 +107,13 @@ function buildEvent(job) {
     };
   }
 
-  const startDate = new Date(`${date}T${time}:00+09:00`);
+  // Supabase time values may be returned as HH:mm:ss. Normalize to HH:mm.
+  const normalizedTime = String(time).slice(0, 5);
+  const startDate = new Date(`${date}T${normalizedTime}:00+09:00`);
+  if (Number.isNaN(startDate.getTime())) {
+    throw new Error(`面接時間の形式が不正です: ${time}`);
+  }
+
   const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
 
   return {
