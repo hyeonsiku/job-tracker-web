@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./lib/supabase";
+import { addInterviewToGoogleCalendar } from "./lib/googleCalendar";
 
 const STATUSES = ["検討", "지원", "서류", "면접", "최종", "오퍼", "탈락", "보류", "辞退"];
 const TYPES = ["自社開発", "受託開発", "SES/プロジェクト", "混合", "不明"];
@@ -17,8 +18,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [view, setView] = useState(new URLSearchParams(location.search).get("id") ? "detail" : "list");
-  const [selectedId, setSelectedId] = useState(new URLSearchParams(location.search).get("id"));
+  const params = new URLSearchParams(location.search);
+  const [view, setView] = useState(params.get("id") ? "detail" : "list");
+  const [selectedId, setSelectedId] = useState(params.get("id"));
   const [modalJob, setModalJob] = useState(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -86,7 +88,7 @@ function App() {
               <Stats jobs={jobs} />
             </section>
             <JobTable jobs={jobs} query={query} statusFilter={statusFilter} typeFilter={typeFilter} employmentFilter={employmentFilter} onOpen={(id) => navigate("detail", id)} onEdit={(job) => setModalJob(job)} onDelete={async (job) => { if (!confirm(`${job.company} を削除しますか？`)) return; await deleteJob(job, setError); await loadJobs(); }} loading={loading} />
-            <InterviewCalendar jobs={jobs} onOpen={(id) => navigate("detail", id)} />
+            <InterviewCalendar jobs={jobs} onOpen={(id) => navigate("detail", id)} setMessage={setMessage} setError={setError} />
           </>
         )}
       </main>
@@ -136,7 +138,7 @@ function JobModal({ job, userId, onClose, onSaved, setError }) {
       await onSaved();
     } catch (err) { setError(err.message || String(err)); } finally { setSaving(false); }
   }
-  return <div className="modal"><div className="dialog"><h2>{job.id ? "会社修正" : "会社追加"}</h2><form onSubmit={save}><div className="grid">{field("会社名 *", "company", "text", true)}{field("求人名", "title")}{selectField("雇用形態", "employment", EMPLOYMENTS)}{selectField("タイプ", "type", TYPES)}{field("年収 / 単価", "salary")}{field("リモート", "remote")}{selectField("状態", "status", STATUSES)}{selectField("適合度", "fit", [5,4,3,2,1])}{field("応募日", "applied", "date")}{field("面接日", "interview_date", "date")}{field("面接時間", "interview_time", "time")}{field("求人URL", "url", "url")}{<div className="field full"><label>求人票PDF（10MB以下）</label><input type="file" accept="application/pdf,.pdf" onChange={e => setFile(e.target.files[0] || null)} /><small className="muted">{form.pdf_path ? `現在: ${form.pdf_path.split("/").pop()}` : "PDFなし"}</small></div>}{textareaField("技術 / ポジション", "tech")}{textareaField("長所", "pros")}{textareaField("注意点 / 面接確認", "caution")}{textareaField("メモ", "memo")}</div><div className="modal-actions"><button type="button" className="btn secondary" onClick={onClose}>キャンセル</button><button className="btn" disabled={saving}>{saving ? "保存中…" : "保存"}</button></div></form></div></div>;
+  return <div className="modal"><div className="dialog"><h2>{job.id ? "会社修正" : "会社追加"}</h2><form onSubmit={save}><div className="grid">{field("会社名 *", "company", "text", true)}{field("求人名", "title")}{selectField("雇用形態", "employment", EMPLOYMENTS)}{selectField("タイプ", "type", TYPES)}{field("年収 / 単価", "salary")}{field("リモート", "remote")}{selectField("状態", "status", STATUSES)}{selectField("適合度", "fit", [5,4,3,2,1])}{field("応募日", "applied", "date")}{field("面接日", "interview_date", "date")}{field("面接時間", "interview_time", "time")}{field("求人URL", "url", "url")}<div className="field full"><label>求人票PDF（10MB以下）</label><input type="file" accept="application/pdf,.pdf" onChange={e => setFile(e.target.files[0] || null)} /><small className="muted">{form.pdf_path ? `現在: ${form.pdf_path.split("/").pop()}` : "PDFなし"}</small></div>{textareaField("技術 / ポジション", "tech")}{textareaField("長所", "pros")}{textareaField("注意点 / 面接確認", "caution")}{textareaField("メモ", "memo")}</div><div className="modal-actions"><button type="button" className="btn secondary" onClick={onClose}>キャンセル</button><button className="btn" disabled={saving}>{saving ? "保存中…" : "保存"}</button></div></form></div></div>;
   function field(label, key, type = "text", required = false) { return <div className="field"><label>{label}</label><input type={type} required={required} value={form[key] ?? ""} onChange={e => update(key, e.target.value)} /></div>; }
   function selectField(label, key, options) { return <div className="field"><label>{label}</label><select value={form[key] ?? ""} onChange={e => update(key, e.target.value)}>{options.map(x => <option key={x} value={x}>{x}</option>)}</select></div>; }
   function textareaField(label, key) { return <div className="field full"><label>{label}</label><textarea value={form[key] ?? ""} onChange={e => update(key, e.target.value)} /></div>; }
@@ -148,14 +150,29 @@ function JobDetail({ job, onBack, onEdit, onRefresh, setMessage, setError }) {
   const [pdfUrl, setPdfUrl] = useState("");
   useEffect(() => { let active = true; if (job.pdf_path) supabase.storage.from("job-pdfs").createSignedUrl(job.pdf_path, 600).then(({ data, error }) => { if (active && !error) setPdfUrl(data.signedUrl); }); return () => { active = false; }; }, [job.pdf_path]);
   async function removePdf() { if (!confirm("PDFを削除しますか？")) return; const { error } = await supabase.storage.from("job-pdfs").remove([job.pdf_path]); if (error) { setError(error.message); return; } const r = await supabase.from("jobs").update({ pdf_path: null }).eq("id", job.id); if (r.error) setError(r.error.message); else { setMessage("PDFを削除しました。"); await onRefresh(); } }
-  return <section><div className="detail-head"><button className="btn secondary" onClick={onBack}>← 一覧</button><div><h1>{job.company}</h1><p className="muted">{job.title}</p></div><button className="btn" onClick={onEdit}>編集</button></div><div className="detail-grid"><InfoCard title="基本情報"><Info label="雇用形態" value={job.employment}/><Info label="タイプ" value={job.type}/><Info label="年収 / 単価" value={job.salary}/><Info label="リモート" value={job.remote}/><Info label="状態" value={job.status}/><Info label="適合度" value={`${job.fit}/5`}/><Info label="応募日" value={job.applied}/><Info label="面接" value={[job.interview_date, job.interview_time].filter(Boolean).join(" ")}/>{job.url && <a href={job.url} target="_blank" rel="noreferrer">求人URL</a>}</InfoCard><InfoCard title="技術 / ポジション"><p className="pre">{job.tech || "—"}</p></InfoCard><InfoCard title="長所"><p className="pre">{job.pros || "—"}</p></InfoCard><InfoCard title="注意点 / 面接確認"><p className="pre">{job.caution || "—"}</p></InfoCard><InfoCard title="メモ"><p className="pre">{job.memo || "—"}</p></InfoCard><InfoCard title="求人票PDF"><div className="actions">{pdfUrl && <a className="btn" href={pdfUrl} target="_blank" rel="noreferrer">PDFを開く</a>}{job.pdf_path && <button className="btn danger" onClick={removePdf}>PDF削除</button>}</div>{pdfUrl && <iframe className="pdf-frame" src={pdfUrl} title="求人票PDF" />}{!job.pdf_path && <p className="muted">PDFなし</p>}</InfoCard></div></section>;
+  return <section><div className="detail-head"><button className="btn secondary" onClick={onBack}>← 一覧</button><div><h1>{job.company}</h1><p className="muted">{job.title}</p></div><button className="btn" onClick={onEdit}>編集</button></div><div className="detail-grid"><InfoCard title="基本情報"><Info label="雇用形態" value={job.employment}/><Info label="タイプ" value={job.type}/><Info label="年収 / 単価" value={job.salary}/><Info label="リモート" value={job.remote}/><Info label="状態" value={job.status}/><Info label="適合度" value={`${job.fit}/5`}/><Info label="応募日" value={job.applied}/><Info label="面接" value={[job.interview_date, job.interview_time].filter(Boolean).join(" ")}/>{job.url && <a href={job.url} target="_blank" rel="noreferrer">求人URL</a>}<div className="actions"><GoogleCalendarButton job={job} setMessage={setMessage} setError={setError} /></div></InfoCard><InfoCard title="技術 / ポジション"><p className="pre">{job.tech || "—"}</p></InfoCard><InfoCard title="長所"><p className="pre">{job.pros || "—"}</p></InfoCard><InfoCard title="注意点 / 面接確認"><p className="pre">{job.caution || "—"}</p></InfoCard><InfoCard title="メモ"><p className="pre">{job.memo || "—"}</p></InfoCard><InfoCard title="求人票PDF"><div className="actions">{pdfUrl && <a className="btn" href={pdfUrl} target="_blank" rel="noreferrer">PDFを開く</a>}{job.pdf_path && <button className="btn danger" onClick={removePdf}>PDF削除</button>}</div>{pdfUrl && <iframe className="pdf-frame" src={pdfUrl} title="求人票PDF" />}{!job.pdf_path && <p className="muted">PDFなし</p>}</InfoCard></div></section>;
 }
 function InfoCard({ title, children }) { return <div className="card"><h2>{title}</h2>{children}</div>; }
 function Info({ label, value }) { return <div className="info"><small>{label}</small><b>{value || "—"}</b></div>; }
 
-function InterviewCalendar({ jobs, onOpen }) {
+function GoogleCalendarButton({ job, setMessage, setError }) {
+  const [busy, setBusy] = useState(false);
+  async function add() {
+    setBusy(true); setMessage(""); setError("");
+    try {
+      const event = await addInterviewToGoogleCalendar(job);
+      setMessage(`Google Calendarに追加しました。${event.htmlLink ? "" : ""}`);
+      if (event.htmlLink) window.open(event.htmlLink, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(`Google Calendar追加エラー: ${err.message}`);
+    } finally { setBusy(false); }
+  }
+  return <button className="btn secondary" disabled={busy || !job.interview_date} onClick={add}>{busy ? "追加中…" : "Google Calendarに追加"}</button>;
+}
+
+function InterviewCalendar({ jobs, onOpen, setMessage, setError }) {
   const interviews = jobs.filter(j => j.interview_date).sort((a,b) => `${a.interview_date}${a.interview_time||""}`.localeCompare(`${b.interview_date}${b.interview_time||""}`));
-  return <section className="card calendar"><h2>面接予定</h2>{interviews.length ? <div className="calendar-list">{interviews.map(j => <button key={j.id} className="calendar-item" onClick={() => onOpen(j.id)}><span>{j.interview_date}</span><b>{j.interview_time || "時間未定"}</b><strong>{j.company}</strong><small>{j.title}</small></button>)}</div> : <p className="muted">面接予定はありません。</p>}</section>;
+  return <section className="card calendar"><h2>面接予定</h2>{interviews.length ? <div className="calendar-list">{interviews.map(j => <div key={j.id} className="calendar-item"><button className="calendar-item-main" onClick={() => onOpen(j.id)}><span>{j.interview_date}</span><b>{j.interview_time || "時間未定"}</b><strong>{j.company}</strong><small>{j.title}</small></button><GoogleCalendarButton job={j} setMessage={setMessage} setError={setError} /></div>)}</div> : <p className="muted">面接予定はありません。</p>}</section>;
 }
 
 function ImportButtons({ userId, jobs, onRefresh, setMessage, setError }) {
