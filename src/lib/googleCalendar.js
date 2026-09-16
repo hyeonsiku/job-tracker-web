@@ -11,6 +11,7 @@ function waitForGoogle() {
       resolve();
       return;
     }
+
     const started = Date.now();
     const timer = setInterval(() => {
       if (window.google?.accounts?.oauth2) {
@@ -26,8 +27,12 @@ function waitForGoogle() {
 
 async function getAccessToken() {
   if (!CLIENT_ID) throw new Error("Google Calendar Client IDが設定されていません。");
+
   await waitForGoogle();
-  if (accessToken && Date.now() < expiresAt - 60000) return accessToken;
+
+  if (accessToken && Date.now() < expiresAt - 60000) {
+    return accessToken;
+  }
 
   if (!tokenClient) {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
@@ -38,17 +43,45 @@ async function getAccessToken() {
   }
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Google認証の応答を受信できませんでした。もう一度お試しください。"));
+    }, 30000);
+
     tokenClient.callback = (response) => {
+      console.debug("[Job Tracker] Google OAuth response", response);
+
       if (response.error) {
+        clearTimeout(timeout);
+        settled = true;
         reject(new Error(response.error_description || response.error));
         return;
       }
+
+      if (!response.access_token) {
+        clearTimeout(timeout);
+        settled = true;
+        reject(new Error("Googleからアクセストークンを取得できませんでした。"));
+        return;
+      }
+
       accessToken = response.access_token;
       expiresAt = Date.now() + Number(response.expires_in || 3600) * 1000;
+      clearTimeout(timeout);
+      settled = true;
       resolve(accessToken);
     };
+
+    console.debug("[Job Tracker] Requesting Google Calendar access");
     tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent" });
   });
+}
+
+function formatLocalDateTime(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}+09:00`;
 }
 
 function buildEvent(job) {
@@ -74,19 +107,25 @@ function buildEvent(job) {
     };
   }
 
-  const start = `${date}T${time}:00+09:00`;
-  const startDate = new Date(start);
+  const startDate = new Date(`${date}T${time}:00+09:00`);
   const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+
   return {
     summary,
     description,
-    start: { dateTime: start, timeZone: "Asia/Tokyo" },
-    end: { dateTime: endDate.toISOString(), timeZone: "Asia/Tokyo" },
+    start: { dateTime: formatLocalDateTime(startDate), timeZone: "Asia/Tokyo" },
+    end: { dateTime: formatLocalDateTime(endDate), timeZone: "Asia/Tokyo" },
   };
 }
 
 export async function addInterviewToGoogleCalendar(job) {
+  console.debug("[Job Tracker] Adding interview to Google Calendar", job);
+
   const token = await getAccessToken();
+  const event = buildEvent(job);
+
+  console.debug("[Job Tracker] Sending Calendar API request", event);
+
   const response = await fetch(
     "https://www.googleapis.com/calendar/v3/calendars/primary/events",
     {
@@ -95,7 +134,7 @@ export async function addInterviewToGoogleCalendar(job) {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildEvent(job)),
+      body: JSON.stringify(event),
     },
   );
 
@@ -103,11 +142,15 @@ export async function addInterviewToGoogleCalendar(job) {
     let message = `Google Calendar API error (${response.status})`;
     try {
       const body = await response.json();
+      console.error("[Job Tracker] Google Calendar API error", body);
       message = body?.error?.message || message;
     } catch {
       // Keep the status message when the response is not JSON.
     }
     throw new Error(message);
   }
-  return response.json();
+
+  const result = await response.json();
+  console.debug("[Job Tracker] Calendar event created", result);
+  return result;
 }
