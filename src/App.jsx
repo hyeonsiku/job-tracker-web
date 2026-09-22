@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./lib/supabase";
-import { addInterviewToGoogleCalendar } from "./lib/googleCalendar";
+import {
+  addInterviewToGoogleCalendar,
+  updateInterviewInGoogleCalendar,
+  deleteInterviewFromGoogleCalendar,
+} from "./lib/googleCalendar";
 
 const STATUSES = ["検討", "지원", "서류", "면접", "최종", "오퍼", "탈락", "보류", "辞退"];
 const TYPES = ["自社開発", "受託開発", "SES/プロジェクト", "混合", "不明"];
@@ -10,6 +14,7 @@ const emptyJob = () => ({
   company: "", title: "", employment: "正社員", type: "不明", salary: "", remote: "",
   status: "検討", fit: 3, applied: "", interview_date: "", interview_time: "", url: "",
   tech: "", pros: "", caution: "", memo: "", pdf_path: null,
+  google_calendar_id: null, google_calendar_event_id: null,
 });
 
 function App() {
@@ -127,6 +132,21 @@ function JobModal({ job, userId, onClose, onSaved, setError }) {
       let saved;
       if (job.id) { const r = await supabase.from("jobs").update(payload).eq("id", job.id).select().single(); if (r.error) throw r.error; saved = r.data; }
       else { const r = await supabase.from("jobs").insert({ ...payload, user_id: userId }).select().single(); if (r.error) throw r.error; saved = r.data; }
+      // If a Calendar event is already linked, keep it synchronized with the saved job.
+      if (job.id && saved.google_calendar_event_id) {
+        if (saved.interview_date) {
+          await updateInterviewInGoogleCalendar(saved);
+        } else {
+          await deleteInterviewFromGoogleCalendar(saved);
+          const r = await supabase
+            .from("jobs")
+            .update({ google_calendar_id: null, google_calendar_event_id: null })
+            .eq("id", saved.id);
+          if (r.error) throw r.error;
+          saved = { ...saved, google_calendar_id: null, google_calendar_event_id: null };
+        }
+      }
+
       if (file) {
         if (file.type && file.type !== "application/pdf") throw new Error("PDFファイルのみアップロードできます。");
         if (file.size > 10 * 1024 * 1024) throw new Error("PDFは10MB以下にしてください。");
@@ -144,7 +164,23 @@ function JobModal({ job, userId, onClose, onSaved, setError }) {
   function textareaField(label, key) { return <div className="field full"><label>{label}</label><textarea value={form[key] ?? ""} onChange={e => update(key, e.target.value)} /></div>; }
 }
 
-async function deleteJob(job, setError) { const { error } = await supabase.from("jobs").delete().eq("id", job.id); if (error) { setError(error.message); return; } if (job.pdf_path) await supabase.storage.from("job-pdfs").remove([job.pdf_path]); }
+async function deleteJob(job, setError) {
+  try {
+    if (job.google_calendar_event_id) {
+      await deleteInterviewFromGoogleCalendar(job);
+    }
+
+    const { error } = await supabase.from("jobs").delete().eq("id", job.id);
+    if (error) throw error;
+
+    if (job.pdf_path) {
+      const { error: pdfError } = await supabase.storage.from("job-pdfs").remove([job.pdf_path]);
+      if (pdfError) throw pdfError;
+    }
+  } catch (err) {
+    setError(err.message || String(err));
+  }
+}
 
 function JobDetail({ job, onBack, onEdit, onRefresh, setMessage, setError }) {
   const [pdfUrl, setPdfUrl] = useState("");
@@ -161,7 +197,15 @@ function GoogleCalendarButton({ job, setMessage, setError }) {
     setBusy(true); setMessage(""); setError("");
     try {
       const event = await addInterviewToGoogleCalendar(job);
-      setMessage(`Google Calendarに追加しました。${event.htmlLink ? "" : ""}`);
+      const { error } = await supabase
+        .from("jobs")
+        .update({
+          google_calendar_id: "primary",
+          google_calendar_event_id: event.id,
+        })
+        .eq("id", job.id);
+      if (error) throw error;
+      setMessage("Google Calendarに追加しました。");
       if (event.htmlLink) window.open(event.htmlLink, "_blank", "noopener,noreferrer");
     } catch (err) {
       setError(`Google Calendar追加エラー: ${err.message}`);
