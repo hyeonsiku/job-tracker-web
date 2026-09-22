@@ -51,7 +51,7 @@ async function getAccessToken() {
     }, 30000);
 
     tokenClient.callback = (response) => {
-      console.debug("[Job Tracker] Google OAuth response", response);
+      console.log("[Job Tracker] Google OAuth response", response);
 
       if (response.error) {
         clearTimeout(timeout);
@@ -74,7 +74,7 @@ async function getAccessToken() {
       resolve(accessToken);
     };
 
-    console.debug("[Job Tracker] Requesting Google Calendar access");
+    console.log("[Job Tracker] Requesting Google Calendar access");
     tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent" });
   });
 }
@@ -232,14 +232,14 @@ export async function deleteInterviewFromGoogleCalendar(job) {
 }
 
 export async function addInterviewToGoogleCalendar(job) {
-  console.debug("[Job Tracker] Adding interview to Google Calendar", job);
+  console.log("[Job Tracker] Adding interview to Google Calendar", job);
 
   const token = await getAccessToken();
   const event = buildEvent(job);
   const existing = await findExistingEvent(token, job, event);
 
   if (existing) {
-    console.debug("[Job Tracker] Calendar event already exists", existing);
+    console.log("[Job Tracker] Calendar event already exists", existing);
     return existing;
   }
 
@@ -249,7 +249,7 @@ export async function addInterviewToGoogleCalendar(job) {
     : buildEventId(job);
 
   const requestEvent = { ...event, id: eventId };
-  console.debug("[Job Tracker] Sending Calendar API request", requestEvent);
+  console.log("[Job Tracker] Sending Calendar API request", requestEvent);
 
   const response = await calendarRequest("", token, {
     method: "POST",
@@ -273,6 +273,14 @@ export async function addInterviewToGoogleCalendar(job) {
   }
 
   const result = await response.json();
-  console.debug("[Job Tracker] Calendar event created", result);
-  return result;
+  console.log("[Job Tracker] Calendar event created", result);
+
+  // Verify the event can be read immediately after creation.
+  const verified = await findEventById(token, result.id);
+  console.log("[Job Tracker] Calendar event verification", verified);
+  if (!verified) {
+    throw new Error("Google Calendarには登録レスポンスが返りましたが、直後の確認で予定を取得できませんでした。");
+  }
+
+  return verified;
 }
