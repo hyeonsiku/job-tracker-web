@@ -206,7 +206,6 @@ function GoogleCalendarButton({ job, setMessage, setError }) {
         .eq("id", job.id);
       if (error) throw error;
       setMessage("Google Calendarに追加しました。");
-      if (event.htmlLink) window.open(event.htmlLink, "_blank", "noopener,noreferrer");
     } catch (err) {
       setError(`Google Calendar追加エラー: ${err.message}`);
     } finally { setBusy(false); }
