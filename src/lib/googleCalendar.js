@@ -125,8 +125,12 @@ function buildEvent(job) {
 }
 
 function buildEventId(job) {
-  // Google Calendar event IDs must use only lowercase letters and digits.
   return `job${String(job.id).replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
+}
+
+function buildReplacementEventId(job) {
+  const base = String(job.id).replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return `job${base}${Date.now().toString(36)}`;
 }
 
 async function calendarRequest(path, token, options = {}) {
@@ -140,13 +144,21 @@ async function calendarRequest(path, token, options = {}) {
   });
 }
 
-async function findExistingEvent(token, job, event) {
-  const eventId = buildEventId(job);
+async function findEventById(token, eventId) {
+  if (!eventId) return null;
 
-  // New events use a deterministic ID, so repeated clicks resolve to the same event.
-  const byId = await calendarRequest(`/${encodeURIComponent(eventId)}`, token);
-  if (byId.ok) return byId.json();
-  if (byId.status !== 404) return null;
+  const response = await calendarRequest(`/${encodeURIComponent(eventId)}`, token);
+  if (response.ok) return response.json();
+
+  if (response.status === 404 || response.status === 410) return null;
+
+  return null;
+}
+
+async function findExistingEvent(token, job, event) {
+  // First check the ID currently stored in Supabase.
+  const stored = await findEventById(token, job.google_calendar_event_id);
+  if (stored) return stored;
 
   // Also detect events created before duplicate protection was added.
   const params = new URLSearchParams({
@@ -160,12 +172,10 @@ async function findExistingEvent(token, job, event) {
   const data = await listResponse.json();
   const events = data.items || [];
   const targetStart = event.start.dateTime || event.start.date;
-  const existing = events.find((item) => {
+  return events.find((item) => {
     const itemStart = item.start?.dateTime || item.start?.date;
     return item.summary === event.summary && itemStart === targetStart;
-  });
-
-  return existing || null;
+  }) || null;
 }
 
 export async function updateInterviewInGoogleCalendar(job) {
@@ -226,13 +236,17 @@ export async function addInterviewToGoogleCalendar(job) {
 
   const token = await getAccessToken();
   const event = buildEvent(job);
-  const eventId = buildEventId(job);
   const existing = await findExistingEvent(token, job, event);
 
   if (existing) {
     console.debug("[Job Tracker] Calendar event already exists", existing);
     return existing;
   }
+
+  // If the old event was deleted in Google Calendar, do not reuse its ID.
+  const eventId = job.google_calendar_event_id
+    ? buildReplacementEventId(job)
+    : buildEventId(job);
 
   const requestEvent = { ...event, id: eventId };
   console.debug("[Job Tracker] Sending Calendar API request", requestEvent);
@@ -248,16 +262,13 @@ export async function addInterviewToGoogleCalendar(job) {
       const body = await response.json();
       console.error("[Job Tracker] Google Calendar API error", body);
 
-      // Another request may have created the deterministic event first.
       if (response.status === 409) {
         const created = await findExistingEvent(token, job, event);
         if (created) return created;
       }
 
       message = body?.error?.message || message;
-    } catch {
-      // Keep the status message when the response is not JSON.
-    }
+    } catch {}
     throw new Error(message);
   }
 
