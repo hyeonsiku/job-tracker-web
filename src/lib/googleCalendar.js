@@ -168,6 +168,59 @@ async function findExistingEvent(token, job, event) {
   return existing || null;
 }
 
+export async function updateInterviewInGoogleCalendar(job) {
+  if (!job.google_calendar_event_id) {
+    throw new Error("Google CalendarイベントIDが保存されていません。先にGoogle Calendarへ追加してください。");
+  }
+
+  const token = await getAccessToken();
+  const event = buildEvent(job);
+  const response = await calendarRequest(
+    `/${encodeURIComponent(job.google_calendar_event_id)}`,
+    token,
+    { method: "PATCH", body: JSON.stringify(event) },
+  );
+
+  if (response.status === 404 || response.status === 410) {
+    throw new Error("Google Calendar側でイベントが見つかりません。もう一度追加してください。");
+  }
+
+  if (!response.ok) {
+    let message = `Google Calendar API error (${response.status})`;
+    try {
+      const body = await response.json();
+      message = body?.error?.message || message;
+    } catch {}
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+export async function deleteInterviewFromGoogleCalendar(job) {
+  if (!job.google_calendar_event_id) return false;
+
+  const token = await getAccessToken();
+  const response = await calendarRequest(
+    `/${encodeURIComponent(job.google_calendar_event_id)}`,
+    token,
+    { method: "DELETE" },
+  );
+
+  if (response.status === 404 || response.status === 410) return true;
+
+  if (!response.ok) {
+    let message = `Google Calendar API error (${response.status})`;
+    try {
+      const body = await response.json();
+      message = body?.error?.message || message;
+    } catch {}
+    throw new Error(message);
+  }
+
+  return true;
+}
+
 export async function addInterviewToGoogleCalendar(job) {
   console.debug("[Job Tracker] Adding interview to Google Calendar", job);
 
