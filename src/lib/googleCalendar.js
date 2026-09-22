@@ -148,7 +148,16 @@ async function findEventById(token, eventId) {
   if (!eventId) return null;
 
   const response = await calendarRequest(`/${encodeURIComponent(eventId)}`, token);
-  if (response.ok) return response.json();
+  if (response.ok) {
+    const event = await response.json();
+    // Google Calendar can return HTTP 200 for a deleted event with status="cancelled".
+    // Treat it as missing so a new event ID can be created.
+    if (event.status === "cancelled") {
+      console.log("[Job Tracker] Stored Calendar event is cancelled; treating it as missing", eventId);
+      return null;
+    }
+    return event;
+  }
 
   if (response.status === 404 || response.status === 410) return null;
 
