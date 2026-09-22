@@ -21,6 +21,8 @@ create table if not exists public.jobs (
   caution text not null default '',
   memo text not null default '',
   pdf_path text,
+  google_calendar_id text,
+  google_calendar_event_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
