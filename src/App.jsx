@@ -6,7 +6,7 @@ import {
   deleteInterviewFromGoogleCalendar,
 } from "./lib/googleCalendar";
 
-const STATUSES = ["検討", "지원", "서류", "면접", "최종", "오퍼", "탈락", "보류", "辞退"];
+const STATUSES = ["検討", "応募", "書類", "面接", "最終面接", "オファー", "不採用", "保留", "辞退"];
 const TYPES = ["自社開発", "受託開発", "SES/プロジェクト", "混合", "不明"];
 const EMPLOYMENTS = ["正社員", "フリーランス"];
 
