@@ -133,8 +133,6 @@ GitHub Pages
 ├── public/
 │   └── js/
 │       └── config.js
-├── js/
-│   └── config.js
 ├── supabase/
 │   ├── schema.sql
 │   └── migrations/
