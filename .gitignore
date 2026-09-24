@@ -1,6 +1,17 @@
 .env
 .env.*
 !.env.example
+
+# Dependencies
+node_modules/
+
+# Package manager lockfile (npm install generates this locally)
+package-lock.json
+
+# Supabase local development files
+supabase/.temp/
+
+# Local/generated files
 *.pdf
 pdf/
 .DS_Store
