@@ -204,8 +204,8 @@ function JobDescriptionCard({ job }) {
       <div className="job-description-summary-head">
         <span>求人情報</span>
       </div>
-      <p className="job-description-preview">{hasDescription ? text : "\u00a0"}</p>
     </summary>
+    <p className="job-description-preview">{hasDescription ? text : "\u00a0"}</p>
     <div className="job-description-content"><p className="pre">{hasDescription ? text : "\u00a0"}</p></div>
   </details></div>;
 }
