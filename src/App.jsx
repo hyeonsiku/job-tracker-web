@@ -201,11 +201,12 @@ function JobDescriptionCard({ job }) {
   const hasDescription = Boolean(text);
   return <div className="card job-description-card"><details>
     <summary>
-      <div className="job-description-summary-head">
-        <span>求人情報</span>
-      </div>
+      <div className="job-description-summary-head">求人情報</div>
+      <div className="job-description-toggle">▶</div>
     </summary>
-    <p className="job-description-preview">{hasDescription ? text : "\u00a0"}</p>
+    <div className="job-description-preview-wrap">
+      <p className="job-description-preview">{hasDescription ? text : "\u00a0"}</p>
+    </div>
     <div className="job-description-content"><p className="pre">{hasDescription ? text : "\u00a0"}</p></div>
   </details></div>;
 }
