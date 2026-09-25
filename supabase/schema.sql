@@ -20,6 +20,7 @@ create table if not exists public.jobs (
   pros text not null default '',
   caution text not null default '',
   memo text not null default '',
+  job_description text not null default '',
   pdf_path text,
   google_calendar_id text,
   google_calendar_event_id text,
