@@ -197,10 +197,17 @@ function JobDetail({ job, onBack, onEdit, onRefresh, setMessage, setError }) {
 }
 function InfoCard({ title, children }) { return <div className="card"><h2>{title}</h2>{children}</div>; }
 function JobDescriptionCard({ job }) {
-  const hasDescription = Boolean(job.job_description?.trim());
+  const text = job.job_description?.trim() || "";
+  const hasDescription = Boolean(text);
   return <div className="card job-description-card"><details>
-    <summary><span>求人情報</span><small>{hasDescription ? `${job.job_description.length.toLocaleString()}文字` : "未登録"}</small></summary>
-    <div className="job-description-content"><p className="pre">{hasDescription ? job.job_description : "求人情報は登録されていません。"}</p></div>
+    <summary>
+      <div className="job-description-summary-head">
+        <span>求人情報</span>
+        {hasDescription && <small>{text.length.toLocaleString()}文字</small>}
+      </div>
+      <p className="job-description-preview">{hasDescription ? text : "\u00a0"}</p>
+    </summary>
+    <div className="job-description-content"><p className="pre">{hasDescription ? text : "\u00a0"}</p></div>
   </details></div>;
 }
 function Info({ label, value }) { return <div className="info"><small>{label}</small><b>{value || "—"}</b></div>; }
