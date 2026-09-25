@@ -12,7 +12,7 @@ const EMPLOYMENTS = ["正社員", "フリーランス"];
 
 function formatDateJP(value) {
   if (!value) return "—";
-  const match = String(value).match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return value;
   return `${Number(match[1])}年${Number(match[2])}月${Number(match[3])}日`;
 }
@@ -237,13 +237,10 @@ function InterviewCalendar({ jobs, onOpen, setMessage, setError }) {
 
 function ImportButtons({ userId, jobs, onRefresh, setMessage, setError }) {
   const [jsonBusy, setJsonBusy] = useState(false); const [pdfBusy, setPdfBusy] = useState(false);
-  async function importJson(file) { if (!file) return; setJsonBusy(true); setError(""); try { const legacy = JSON.parse(await file.text()); if (!Array.isArray(legacy)) throw new Error("JSONの形式が配列ではありません。"); const existing = new Set(jobs.map(j => `${j.company}
-${j.title}`)); const rows = legacy.filter(j => j?.company && !existing.has(`${j.company}
+  async function importJson(file) { if (!file) return; setJsonBusy(true); setError(""); try { const legacy = JSON.parse(await file.text()); if (!Array.isArray(legacy)) throw new Error("JSONの形式が配列ではありません。"); const existing = new Set(jobs.map(j => `${j.company}\n${j.title}`)); const rows = legacy.filter(j => j?.company && !existing.has(`${j.company}
 ${j.title || ""}`)).map(j => ({ user_id:userId, company:j.company, title:j.title||"", employment:j.employment||"正社員", type:j.type||"不明", salary:j.salary||"", remote:j.remote||"", status:STATUSES.includes(j.status)?j.status:"検討", fit:Math.min(5,Math.max(1,Number(j.fit)||3)), applied:j.applied ? String(j.applied).slice(0,10):null, interview_date:(j.interviewDate??j.interview_date) ? String(j.interviewDate??j.interview_date).slice(0,10):null, interview_time:(j.interviewTime??j.interview_time) ? String(j.interviewTime??j.interview_time).slice(0,5):null, url:j.url||null, tech:j.tech||"", pros:j.pros||"", caution:j.caution||"", memo:j.memo||"", job_description:j.job_description||j.jdText||"" })); if (rows.length) { const { error } = await supabase.from("jobs").insert(rows); if (error) throw error; } await onRefresh(); setMessage(`${rows.length}件を取り込みました。`); } catch(e) { setError(`JSON取込エラー: ${e.message}`); } finally { setJsonBusy(false); } }
-  async function importPdfs(files) { if (!files?.length) return; setPdfBusy(true); setError(""); const results=[]; try { const byCompany={}; jobs.forEach(j => (byCompany[j.company]??=[]).push(j)); for (const file of files) { const candidates=Object.entries(byCompany).filter(([c])=>file.name.includes(c)).flatMap(([,items])=>items); if (file.type && file.type!=="application/pdf" || file.size>10*1024*1024 || candidates.length!==1) { results.push(`SKIP ${file.name}`); continue; } const job=candidates[0]; const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=`${userId}/${job.id}/${Date.now()}_${safe}`; const up=await supabase.storage.from("job-pdfs").upload(path,file,{contentType:"application/pdf",upsert:false}); if(up.error)throw up.error; if(job.pdf_path)await supabase.storage.from("job-pdfs").remove([job.pdf_path]); const r=await supabase.from("jobs").update({pdf_path:path}).eq("id",job.id); if(r.error)throw r.error; results.push(`OK ${file.name} → ${job.company}`); } await onRefresh(); setMessage(results.join("
-")); } catch(e) { setError(`PDF取込エラー: ${e.message}
-${results.join("
-")}`); } finally { setPdfBusy(false); } }
+  async function importPdfs(files) { if (!files?.length) return; setPdfBusy(true); setError(""); const results=[]; try { const byCompany={}; jobs.forEach(j => (byCompany[j.company]??=[]).push(j)); for (const file of files) { const candidates=Object.entries(byCompany).filter(([c])=>file.name.includes(c)).flatMap(([,items])=>items); if (file.type && file.type!=="application/pdf" || file.size>10*1024*1024 || candidates.length!==1) { results.push(`SKIP ${file.name}`); continue; } const job=candidates[0]; const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=`${userId}/${job.id}/${Date.now()}_${safe}`; const up=await supabase.storage.from("job-pdfs").upload(path,file,{contentType:"application/pdf",upsert:false}); if(up.error)throw up.error; if(job.pdf_path)await supabase.storage.from("job-pdfs").remove([job.pdf_path]); const r=await supabase.from("jobs").update({pdf_path:path}).eq("id",job.id); if(r.error)throw r.error; results.push(`OK ${file.name} → ${job.company}`); } await onRefresh(); setMessage(results.join("\n")); } catch(e) { setError(`PDF取込エラー: ${e.message}
+${results.join("\n")}`); } finally { setPdfBusy(false); } }
   return <><label className="btn secondary">{jsonBusy?"取込中…":"JSON一括取込"}<input hidden type="file" accept="application/json,.json" onChange={e=>importJson(e.target.files[0])}/></label><label className="btn secondary">{pdfBusy?"取込中…":"PDF一括取込"}<input hidden type="file" accept="application/pdf,.pdf" multiple onChange={e=>importPdfs(e.target.files)}/></label></>;
 }
 
