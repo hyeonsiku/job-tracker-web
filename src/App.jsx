@@ -203,7 +203,6 @@ function JobDescriptionCard({ job }) {
     <summary>
       <div className="job-description-summary-head">
         <span>求人情報</span>
-        {hasDescription && <small>{text.length.toLocaleString()}文字</small>}
       </div>
       <p className="job-description-preview">{hasDescription ? text : "\u00a0"}</p>
     </summary>
