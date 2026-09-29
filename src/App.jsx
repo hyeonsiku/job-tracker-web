@@ -191,11 +191,34 @@ async function deleteJob(job, setError) {
 
 function JobDetail({ job, onBack, onEdit, onRefresh, setMessage, setError }) {
   const [pdfUrl, setPdfUrl] = useState("");
+  const [interviewHistory, setInterviewHistory] = useState([]);
   useEffect(() => { let active = true; if (job.pdf_path) supabase.storage.from("job-pdfs").createSignedUrl(job.pdf_path, 600).then(({ data, error }) => { if (active && !error) setPdfUrl(data.signedUrl); }); return () => { active = false; }; }, [job.pdf_path]);
+  useEffect(() => {
+    let active = true;
+    supabase.from("interview_history").select("*").eq("job_id", job.id).order("created_at", { ascending: false }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) setError(error.message);
+      else setInterviewHistory(data || []);
+    });
+    return () => { active = false; };
+  }, [job.id]);
   async function removePdf() { if (!confirm("PDFを削除しますか？")) return; const { error } = await supabase.storage.from("job-pdfs").remove([job.pdf_path]); if (error) { setError(error.message); return; } const r = await supabase.from("jobs").update({ pdf_path: null }).eq("id", job.id); if (r.error) setError(r.error.message); else { setMessage("PDFを削除しました。"); await onRefresh(); } }
-  return <section><div className="detail-head"><button className="btn secondary" onClick={onBack}>← 一覧</button><div><h1>{job.company}</h1><p className="muted">{job.title}</p></div><button className="btn" onClick={onEdit}>編集</button></div><div className="detail-grid"><InfoCard title="基本情報"><Info label="雇用形態" value={job.employment}/><Info label="タイプ" value={job.type}/><Info label="年収 / 単価" value={job.salary}/><Info label="リモート" value={job.remote}/><Info label="状態" value={job.status}/><Info label="適合度" value={`${job.fit}/5`}/><Info label="応募日" value={formatDateJP(job.applied)}/><Info label="面接" value={job.interview_date ? `${formatDateJP(job.interview_date)}${job.interview_time ? ` ${job.interview_time}` : ""}` : "—"}/>{job.url && <a href={job.url} target="_blank" rel="noreferrer">求人URL</a>}<div className="actions"><GoogleCalendarButton job={job} setMessage={setMessage} setError={setError} /></div></InfoCard><JobDescriptionCard job={job} /><InfoCard title="技術 / ポジション"><p className="pre">{job.tech || "—"}</p></InfoCard><InfoCard title="長所"><p className="pre">{job.pros || "—"}</p></InfoCard><InfoCard title="注意点 / 面接確認"><p className="pre">{job.caution || "—"}</p></InfoCard><InfoCard title="メモ"><p className="pre">{job.memo || "—"}</p></InfoCard><InfoCard title="求人票PDF"><div className="actions">{pdfUrl && <a className="btn" href={pdfUrl} target="_blank" rel="noreferrer">PDFを開く</a>}{job.pdf_path && <button className="btn danger" onClick={removePdf}>PDF削除</button>}</div>{pdfUrl && <iframe className="pdf-frame" src={pdfUrl} title="求人票PDF" />}{!job.pdf_path && <p className="muted">PDFなし</p>}</InfoCard></div></section>;
+  return <section><div className="detail-head"><button className="btn secondary" onClick={onBack}>← 一覧</button><div><h1>{job.company}</h1><p className="muted">{job.title}</p></div><button className="btn" onClick={onEdit}>編集</button></div><div className="detail-grid"><InfoCard title="基本情報"><Info label="雇用形態" value={job.employment}/><Info label="タイプ" value={job.type}/><Info label="年収 / 単価" value={job.salary}/><Info label="リモート" value={job.remote}/><Info label="状態" value={job.status}/><Info label="適合度" value={`${job.fit}/5`}/><Info label="応募日" value={formatDateJP(job.applied)}/><Info label="面接" value={job.interview_date ? `${formatDateJP(job.interview_date)}${job.interview_time ? ` ${job.interview_time}` : ""}` : "—"}/>{job.url && <a href={job.url} target="_blank" rel="noreferrer">求人URL</a>}<div className="actions"><GoogleCalendarButton job={job} setMessage={setMessage} setError={setError} /></div></InfoCard>{interviewHistory.length > 0 && <InterviewHistoryCard history={interviewHistory} />}<JobDescriptionCard job={job} /><InfoCard title="技術 / ポジション"><p className="pre">{job.tech || "—"}</p></InfoCard><InfoCard title="長所"><p className="pre">{job.pros || "—"}</p></InfoCard><InfoCard title="注意点 / 面接確認"><p className="pre">{job.caution || "—"}</p></InfoCard><InfoCard title="メモ"><p className="pre">{job.memo || "—"}</p></InfoCard><InfoCard title="求人票PDF"><div className="actions">{pdfUrl && <a className="btn" href={pdfUrl} target="_blank" rel="noreferrer">PDFを開く</a>}{job.pdf_path && <button className="btn danger" onClick={removePdf}>PDF削除</button>}</div>{pdfUrl && <iframe className="pdf-frame" src={pdfUrl} title="求人票PDF" />}{!job.pdf_path && <p className="muted">PDFなし</p>}</InfoCard></div></section>;
 }
 function InfoCard({ title, children }) { return <div className="card"><h2>{title}</h2>{children}</div>; }
+function InterviewHistoryCard({ history }) {
+  return <InfoCard title="面接履歴">
+    <div className="interview-history-list">
+      {history.map(item => (
+        <div className="interview-history-item" key={item.id}>
+          <span>{formatDateJP(item.interview_date)}</span>
+          <b>{item.interview_time ? item.interview_time.slice(0, 5) : "時間未定"}</b>
+        </div>
+      ))}
+    </div>
+  </InfoCard>;
+}
+
 function JobDescriptionCard({ job }) {
   const text = job.job_description?.trim() || "";
   const hasDescription = Boolean(text);
