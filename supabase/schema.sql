@@ -128,3 +128,32 @@ using (
 
 create index if not exists jobs_user_id_created_at_idx
 on public.jobs(user_id, created_at desc);
+
+create or replace function public.log_interview_schedule_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.interview_date is not null
+     and (
+       old.interview_date is distinct from new.interview_date
+       or old.interview_time is distinct from new.interview_time
+     ) then
+    insert into public.interview_history (
+      job_id, user_id, interview_date, interview_time
+    )
+    values (
+      old.id, old.user_id, old.interview_date, old.interview_time
+    );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists jobs_interview_schedule_history on public.jobs;
+create trigger jobs_interview_schedule_history
+after update of interview_date, interview_time on public.jobs
+for each row
+execute function public.log_interview_schedule_change();
